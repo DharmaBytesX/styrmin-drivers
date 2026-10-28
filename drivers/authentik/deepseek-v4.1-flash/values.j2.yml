@@ -1,0 +1,82 @@
+# Written by scaffold_driver.py from https://charts.goauthentik.io/authentik 2026.8.5, completed by hand.
+# Keys come from the chart's values.yaml: check each one.
+# Ingress: switched on with server.ingress.enabled; its hosts are server.ingress.hosts (a list of strings). Do not set the ingress class: Styrmin sets it.
+fullnameOverride: styrmin-authentik
+global:
+  image:
+    tag: "{{ app.version }}"
+server:
+  ingress:
+    enabled: true
+    hosts: ["{{ services['authentik'].primary_fqdn }}", "{{ services['authentik'].human_readable_fqdn }}"]
+authentik:
+  # Fixed credentials: never generated, so redeploys keep the same signing key and database login.
+  secret_key: "styrmin-authentik-secret-key-change-me-0123456789abcdef"
+  bootstrap_email: "admin@example.com"
+  bootstrap_password: "styrmin-authentik-admin-password"
+  postgresql:
+    host: "styrmin-postgresql"
+    password: "styrmin-authentik-database-password"
+
+postgresql:
+  fullnameOverride: styrmin-postgresql
+  enabled: true
+  auth:
+    postgresPassword: "styrmin-authentik-postgres-superuser-password"
+    password: "styrmin-authentik-database-password"
+    replicationPassword: "styrmin-authentik-replication-password"
+  primary:
+    persistence:
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+    extraVolumes:
+      # the chart's own entries, kept: a list value replaces the default list
+      - {"name": "postgresql-socket", "emptyDir": {}}
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      # the chart's own entries, kept: a list value replaces the default list
+      - {"name": "postgresql-socket", "mountPath": "/var/run/postgresql"}
+      - name: backup
+        mountPath: /backup
+  readReplicas:
+    persistence:
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  backup:
+    cronjob:
+      storage:
+        storageClass: "{{ instance.config.standard_storage.storage_class }}"
+
+# Managed outposts are not used, and Styrmin's egress policy blocks the Kubernetes API,
+# so do not create the service account and RBAC the chart uses for them.
+serviceAccount:
+  create: false
+
+# Host: the chart builds `<release>-postgresql` in authentik.postgresql.host; it is set above to
+# the Service `styrmin-postgresql`, the name the fullnameOverride gives it.
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+additionalObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-authentik-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database)
+      - to:
+          - podSelector: {}

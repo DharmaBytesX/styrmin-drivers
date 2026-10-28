@@ -1,0 +1,51 @@
+---
+# authentik driver, checked with check_driver.py against https://charts.goauthentik.io/authentik 2026.8.5.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: authentik
+spec:
+  version: "1"
+  supported_versions: ">=2026.8,<2026.9"   # the pinned chart tracks application minor versions
+  default_version: "2026.8.5"
+  info:
+    icon: https://goauthentik.io/img/icon.png
+    description: authentik is an open-source Identity Provider focused on flexibility and versatility
+    links:
+      - link: Homepage
+        url: https://goauthentik.io
+      - link: Source
+        url: https://goauthentik.io/docs/
+  helm:
+    main:
+      location: https://charts.goauthentik.io/authentik
+      version: "2026.8.5"
+
+  components:
+    server:   # Deployment/styrmin-authentik-server, image ghcr.io/goauthentik/server:2026.8.5
+      container: server
+      identifier:
+        label:
+          app.kubernetes.io/component: "server"
+    worker:   # Deployment/styrmin-authentik-worker, image ghcr.io/goauthentik/server:2026.8.5
+      container: worker
+      identifier:
+        label:
+          app.kubernetes.io/component: "worker"
+    postgresql:   # StatefulSet/styrmin-postgresql, image docker.io/library/postgres:17.11-trixie
+      container: postgresql
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/component: "primary"
+      backup:
+        enabled: true
+        kind: postgres
+        database_name: authentik
+
+  services:
+    - name: authentik
+      kind: http
+      scope: external
+      port: 9000   # the port the container listens on
+      component: server
