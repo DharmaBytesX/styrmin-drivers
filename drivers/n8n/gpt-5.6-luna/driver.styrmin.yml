@@ -1,0 +1,40 @@
+---
+# Generated from the official n8n Helm chart.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: n8n
+spec:
+  version: "1"
+  supported_versions: ">=2.44,<2.45"
+  default_version: "2.44.5"
+  info:
+    icon: https://raw.githubusercontent.com/n8n-io/n8n-hosting/main/assets/n8n-chart-icon.svg
+    description: The official, production-grade Helm chart for n8n, the workflow automation platform. Supports queue mode, multi-main HA, webhook processors, task runners, HPA, PDB, network policies, and S3 external storage.
+    links:
+      - link: Homepage
+        url: https://n8n.io
+      - link: Source
+        url: https://github.com/n8n-io/n8n-hosting
+  helm:
+    main:
+      location: oci://ghcr.io/n8n-io/n8n-helm-chart/n8n
+      version: "1.17.0"
+
+  components:
+    main:   # Deployment/styrmin-n8n-main, image docker.n8n.io/n8nio/n8n:2.44.5
+      container: n8n-main
+      identifier:
+        label:
+          app.kubernetes.io/component: "main"
+      backup:
+        enabled: true
+        kind: disk
+        volumes: [data]
+
+  services:
+    - name: n8n
+      kind: http
+      scope: external
+      port: 5678   # the port the container listens on
+      component: main

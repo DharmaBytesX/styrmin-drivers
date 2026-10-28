@@ -1,0 +1,90 @@
+# Helm values for the official Nextcloud chart, rendered by Styrmin.
+# Image tag: the chart's default image is docker.io/library/nextcloud:35.0.2-apache; check the tag format.
+# Ingress: switched on with ingress.enabled; the chart takes its host from nextcloud.host. Do not set the ingress class: Styrmin sets it.
+fullnameOverride: styrmin-nextcloud
+global:
+  security:
+    allowInsecureImages: true
+nextcloud:
+  host: "{{ services['nextcloud'].primary_fqdn }}"
+  trustedDomains:
+    - "{{ services['nextcloud'].primary_fqdn }}"
+    - "{{ services['nextcloud'].human_readable_fqdn }}"
+  username: admin
+  password: nextcloud-admin-password
+image:
+  tag: "{{ app.version }}"
+ingress:
+  enabled: true
+  path: /
+  pathType: Prefix
+
+# SQLite is disabled in favor of the bundled persistent MariaDB instance.
+internalDatabase:
+  enabled: false
+externalDatabase:
+  enabled: true
+  type: mysql
+  host: styrmin-mariadb
+  user: nextcloud
+  password: nextcloud-db-password
+  database: nextcloud
+
+mariadb:
+  enabled: true
+  fullnameOverride: styrmin-mariadb
+  image:
+    repository: bitnamilegacy/mariadb
+    tag: 11.4.6-debian-12-r0
+  auth:
+    database: nextcloud
+    username: nextcloud
+    password: nextcloud-db-password
+  architecture: standalone
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+      size: 8Gi
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+persistence:
+  enabled: true
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  size: 8Gi
+
+cronjob:
+  enabled: true
+  type: sidecar
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraManifests:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-nextcloud-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}

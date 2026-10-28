@@ -1,0 +1,77 @@
+# Values for the official n8n Helm chart 1.17.0.
+fullnameOverride: styrmin-n8n
+persistence:
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+  enabled: true
+  size: 10Gi
+image:
+  tag: "{{ app.version }}"
+secretRefs:
+  env:
+    N8N_ENCRYPTION_KEY: styrmin-n8n-encryption-key-change-in-production
+    N8N_HOST: "{{ services['n8n'].primary_fqdn }}"
+    N8N_PORT: "5678"
+    N8N_PROTOCOL: "{{ instance.config.external_url_scheme }}"
+queueMode:
+  enabled: false
+database:
+  type: sqlite
+  useExternal: false
+redis:
+  enabled: false
+rbac:
+  create: false
+serviceAccount:
+  create: false
+  name: default
+  automountServiceAccountToken: false
+
+# Ingress: the chart's own host format, with the two hosts Styrmin gives the service.
+# Do not set the ingress class: Styrmin sets it.
+ingress:
+  enabled: true
+  hosts:
+  - host: "{{ services['n8n'].primary_fqdn }}"
+    paths:
+    - path: /
+      pathType: Prefix
+  - host: "{{ services['n8n'].human_readable_fqdn }}"
+    paths:
+    - path: /
+      pathType: Prefix
+editor:
+  url: "{{ instance.config.external_url_scheme }}://{{ services['n8n'].primary_fqdn }}"
+webhook:
+  url: "{{ instance.config.external_url_scheme }}://{{ services['n8n'].primary_fqdn }}"
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-n8n-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment, if the chart adds any.
+      - to:
+           - podSelector: {}
+      # Workflow nodes commonly call external APIs and services.
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

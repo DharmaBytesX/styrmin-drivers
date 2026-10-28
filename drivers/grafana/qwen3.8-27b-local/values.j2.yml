@@ -1,0 +1,62 @@
+# Helm values for the grafana-community grafana chart 14.2.0 (Grafana 13.3.0),
+# rendered by Styrmin from the deployment's context.
+fullnameOverride: styrmin-grafana
+
+# Fixed, not generated: a restored or cloned deployment must keep working with its data.
+# The admin password is a driver parameter so the user can choose it at creation time.
+adminUser: admin
+adminPassword: "{{ parameters.admin_password }}"
+
+# The chart's default tag is the chart's appVersion plus the "-distroless" suffix;
+# follow the deployed app version instead.
+image:
+  tag: "{{ app.version }}-distroless"
+
+# No container in this deployment calls the Kubernetes API (all chart sidecars are
+# disabled), so the chart's Role/ClusterRole and binding are not needed.
+rbac:
+  create: false
+
+# No helm-test bats jobs.
+testFramework:
+  enabled: false
+
+# Dashboards, users and settings live in the embedded SQLite database under
+# /var/lib/grafana; keep them on a PVC instead of an emptyDir.
+persistence:
+  enabled: true
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+
+# Ingress for the external service. Do not set the ingress class: Styrmin sets it.
+ingress:
+  enabled: true
+  hosts:
+    - "{{ services['grafana'].primary_fqdn }}"
+    - "{{ services['grafana'].human_readable_fqdn }}"
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-grafana-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment
+      - to:
+          - podSelector: {}

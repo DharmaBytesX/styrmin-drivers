@@ -1,0 +1,49 @@
+---
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: grafana
+spec:
+  version: "1"
+  # The chart is pinned to 14.2.0, built for Grafana 13.3.0, and the image tag follows the
+  # app version as "<app>-distroless". Only 13.3.0-distroless exists, so pin to it.
+  supported_versions: "==13.3.0"
+  default_version: "13.3.0"
+  info:
+    icon: https://artifacthub.io/image/b4fed1a7-6c8f-4945-b99d-096efa3e4116
+    description: The leading tool for querying and visualizing time series and metrics.
+    links:
+      - link: Homepage
+        url: https://grafana.com
+      - link: Source
+        url: https://github.com/grafana/grafana
+
+  helm:
+    main:
+      location: https://grafana-community.github.io/helm-charts/grafana
+      version: "14.2.0"
+
+  components:
+    server:   # Deployment/styrmin-grafana, image docker.io/grafana/grafana
+      container: grafana
+      singleton: true   # embedded SQLite database: a second pod would get its own data
+      identifier:
+        label:
+          app.kubernetes.io/name: "grafana"
+      backup:
+        enabled: true
+        kind: disk
+        volume: storage   # the pod volume mounted at /var/lib/grafana
+
+  parameters:
+    - name: admin_password
+      label: Password of the initial admin user
+      kind: string
+      default: grafana-admin-password
+
+  services:
+    - name: grafana
+      kind: http
+      scope: external
+      port: 3000   # the port the container listens on
+      component: server

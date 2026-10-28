@@ -1,0 +1,50 @@
+---
+# Nextcloud driver using the official Nextcloud Helm chart.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: nextcloud
+spec:
+  version: "1"
+  supported_versions: ">=35.0,<35.1"
+  default_version: "35.0.2"
+  info:
+    icon: https://cdn.rawgit.com/docker-library/docs/defa5ffc7123177acd60ddef6e16bddf694cc35f/nextcloud/logo.svg
+    description: A file sharing server that puts the control and security of your own data back into your hands.
+    links:
+      - link: Homepage
+        url: https://nextcloud.com/
+      - link: Source
+        url: https://github.com/nextcloud/helm
+  helm:
+    main:
+      location: https://nextcloud.github.io/helm/nextcloud
+      version: "9.4.1"
+
+  components:
+    app:   # Deployment/styrmin-nextcloud, image docker.io/library/nextcloud:35.0.2-apache
+      container: nextcloud
+      identifier:
+        label:
+          app.kubernetes.io/component: "app"
+      backup:
+        enabled: true
+        kind: disk
+        volume: nextcloud-main
+    database:
+      container: mariadb
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/name: "mariadb"
+      backup:
+        enabled: true
+        kind: mariadb
+        database_name: nextcloud
+
+  services:
+    - name: nextcloud
+      kind: http
+      scope: external
+      port: 80   # the port the container listens on
+      component: app
