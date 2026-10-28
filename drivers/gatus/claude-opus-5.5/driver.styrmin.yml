@@ -1,0 +1,45 @@
+---
+# Gatus on the bjw-s app-template chart. Gatus's own chart (twin.github.io/helm-charts, gatus
+# 1.5.0) has no value for extra objects, and its NetworkPolicy only covers incoming traffic, so
+# under Styrmin (which denies all egress) the pod could not resolve DNS nor check any endpoint.
+# app-template renders the same pod (image, port 8080, /health probes, read-only root file system,
+# user 65534, configuration in /config/config.yaml) plus a volume and an egress NetworkPolicy.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: gatus
+spec:
+  version: "1"
+  supported_versions: ">=5.0,<6.0"
+  default_version: "5.34.0"   # the image tag is v<version>
+  info:
+    icon: https://raw.githubusercontent.com/TwiN/gatus/a1c8422c2ff2b9d0a6f184c99e4dc728d3f2cd75/web/static/logo-192x192.png
+    description: Automated service health dashboard, with its history in SQLite on a volume.
+    authors: [opsmill]
+    license: Apache-2.0
+    links:
+      - link: Homepage
+        url: https://github.com/TwiN/gatus
+  helm:
+    main:
+      location: oci://ghcr.io/bjw-s-labs/helm/app-template
+      version: 5.2.1
+
+  components:
+    server:
+      container: app
+      identifier:
+        label:
+          styrmin/component: server
+      singleton: true          # SQLite on a ReadWriteOnce volume: one pod only
+      backup:
+        enabled: true
+        kind: disk
+        volume: data
+
+  services:
+    - name: gatus
+      kind: http
+      scope: external
+      port: 8080               # the port the container listens on
+      component: server
