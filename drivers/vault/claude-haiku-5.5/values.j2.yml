@@ -1,0 +1,44 @@
+# Written from https://helm.releases.hashicorp.com/vault 0.34.1 (scaffold_driver.py draft, then edited).
+# Keys come from the chart's values.yaml and templates (chart 0.34.1).
+# Ingress: switched on with server.ingress.enabled; the chart takes its host from server.ingress.hosts. Do not set the ingress class: Styrmin sets it.
+# This chart has no value for extra objects (extraDeploy, extraObjects), so the driver cannot add
+# its own egress NetworkPolicy. The chart's NetworkPolicy is on instead (with the egress rules the
+# driver needs, when the chart takes a list): a policy only adds allowed connections.
+# Readiness: the chart's default probe runs `vault status`, which exits 2 while Vault is sealed,
+# so a new Vault would never become Ready. server.readinessProbe.path switches it to the HTTP health
+# endpoint, which returns 204 (ready) for a sealed or uninitialized Vault. Vault still needs an
+# operator to run `vault operator init` and unseal it: Styrmin does not do that.
+fullnameOverride: styrmin-vault
+injector:
+  # The agent injector is a webhook that calls the Kubernetes API, which Styrmin's network policies
+  # block. Off: pods do not get Vault Agent sidecars injected.
+  enabled: false
+server:
+  # Both are only for features that call the Kubernetes API, which Styrmin's network policies block:
+  # authDelegator lets Vault check service account tokens (the Kubernetes auth method), and
+  # serviceDiscovery lets an HA cluster label its pods. The standalone server uses neither.
+  authDelegator:
+    enabled: false
+  serviceAccount:
+    serviceDiscovery:
+      enabled: false
+  image:
+    # Vault's image tags have no "v" prefix (hashicorp/vault:2.0.4).
+    tag: "{{ app.version }}"
+  readinessProbe:
+    path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
+  dataStorage:
+    storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  auditStorage:
+    storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  ingress:
+    enabled: true
+    hosts: [{"host": "{{ services['vault'].primary_fqdn }}", "paths": ["/"]}, {"host": "{{ services['vault'].human_readable_fqdn }}", "paths": ["/"]}]
+  networkPolicy:
+    enabled: true
+    egress: [{"to": [{"namespaceSelector": {}, "podSelector": {"matchExpressions": [{"key": "k8s-app", "operator": "In", "values": ["kube-dns", "coredns"]}]}}], "ports": [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]}, {"to": [{"podSelector": {}}]}]
+
+# Credentials: Vault creates its own root token and unseal keys when an operator runs
+# `vault operator init`. The chart has no value that sets them, so the driver sets none.
+# Dev mode (server.dev) stays off: it would start with the fixed root token "root".
+# The enterprise license (server.enterpriseLicense) is not set: the driver deploys the open source image.

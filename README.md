@@ -41,6 +41,7 @@ passed. Its folder has a `TEST-RESULT.md` with the details.
 | Nextcloud | `drivers/nextcloud/claude-sonnet-5.5` | Claude Code, Claude Sonnet 5.5 | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 91 s |
 | Nextcloud | `drivers/nextcloud/deepseek-v4.1-flash` | opencode, GO plan, deepseek-v4.1-flash | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 80 s |
 | Nextcloud | `drivers/nextcloud/gpt-5.6-luna` | opencode, GO plan, gpt-5.6-luna | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 151 s |
+| Vault | `drivers/vault/claude-haiku-5.5` | Claude Code, Claude Haiku 5.5 | 0.1.13 | `https://helm.releases.hashicorp.com/vault` 0.34.1 | 2.0.4 | 90 s |
 | Vault | `drivers/vault/claude-sonnet-5.5` | Claude Code, Claude Sonnet 5.5 | 0.1.11 | `https://helm.releases.hashicorp.com/vault` 0.34.1 | 2.0.4 | 100 s |
 | Vault | `drivers/vault/deepseek-v4.1-flash` | opencode, GO plan, deepseek-v4.1-flash | 0.1.11 | `https://helm.releases.hashicorp.com/vault` 0.34.1 | 2.0.4 | 90 s |
 

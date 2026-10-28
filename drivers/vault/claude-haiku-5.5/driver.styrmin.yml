@@ -1,0 +1,41 @@
+---
+# Draft written by scaffold_driver.py from https://helm.releases.hashicorp.com/vault 0.34.1.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: vault
+spec:
+  version: "1"
+  supported_versions: ">=2.0,<2.1"   # 2.0.0, 2.0.1 and 2.0.4 checked; see README
+  default_version: "2.0.4"
+  info:
+    icon: https://github.com/hashicorp/vault/raw/f22d202cde2018f9455dec755118a9b84586e082/Vault_PrimaryLogo_Black.png
+    description: Official HashiCorp Vault Chart
+    links:
+      - link: Homepage
+        url: https://www.vaultproject.io
+      - link: Source
+        url: https://github.com/hashicorp/vault
+  helm:
+    main:
+      location: https://helm.releases.hashicorp.com/vault
+      version: "0.34.1"
+
+  components:
+    server:   # StatefulSet/styrmin-vault, image hashicorp/vault:2.0.4
+      container: vault
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/name: "vault"
+      backup:
+        enabled: true
+        kind: disk
+        volumes: [data]
+
+  services:
+    - name: vault
+      kind: http
+      scope: external
+      port: 8200   # the port the container listens on
+      component: server
