@@ -1,0 +1,37 @@
+# Draft written by scaffold_driver.py from https://helm.releases.hashicorp.com/vault 0.34.1.
+# Keys come from the chart's values.yaml: check each one.
+# Ingress: switched on with server.ingress.enabled; the chart takes its host from server.ingress.hosts. Do not set the ingress class: Styrmin sets it.
+# This chart has no value for extra objects (extraDeploy, extraObjects), so the driver cannot add
+# its own egress NetworkPolicy. The chart's NetworkPolicy is on instead (with the egress rules the
+# driver needs, when the chart takes a list): a policy only adds allowed connections.
+# check_driver.py says whether every pod reaches DNS; if one does not: for a single-container
+# application, start again from examples/app-template/; otherwise say in the README that this
+# chart cannot run under Styrmin ("When no value can carry the policy" in references/networking.md).
+fullnameOverride: styrmin-vault
+global:
+  enabled: true
+injector:
+  enabled: false
+csi:
+  enabled: false
+ui:
+  enabled: true
+server:
+  readinessProbe:
+    path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
+  authDelegator:
+    enabled: false
+  serviceAccount:
+    serviceDiscovery:
+      enabled: false
+  dataStorage:
+    storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  auditStorage:
+    storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  ingress:
+    enabled: true
+    hosts: [{"host": "{{ services['vault'].primary_fqdn }}", "paths": ["/"]}, {"host": "{{ services['vault'].human_readable_fqdn }}", "paths": ["/"]}]
+  networkPolicy:
+    enabled: true
+    egress: [{"to": [{"namespaceSelector": {}, "podSelector": {"matchExpressions": [{"key": "k8s-app", "operator": "In", "values": ["kube-dns", "coredns"]}]}}], "ports": [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]}, {"to": [{"podSelector": {}}]}]
+

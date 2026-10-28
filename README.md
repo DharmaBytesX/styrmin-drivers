@@ -11,9 +11,10 @@ Application drivers for [Styrmin](https://docs.styrmin.app/).
 
 Each driver below was loaded from git into Styrmin 0.1.54 on a local kind cluster with network
 policies enforced, deployed in its own environment, and checked through its URL: a health endpoint
-that reaches the database, and a login with the admin credentials the driver sets (n8n has no
-admin from configuration: its first user is created in the browser, so no login was tested). Every
-one passed. Its folder has a `TEST-RESULT.md` with the details.
+that reaches the database, and a login with the admin credentials the driver sets. Two
+applications take no admin from configuration, so no login was tested: n8n creates its first user
+in the browser, and a new Vault waits for its operator to initialize and unseal it. Every driver
+passed. Its folder has a `TEST-RESULT.md` with the details.
 
 | Application | Driver directory | Written by | Skill | Chart | App version | Running after |
 |---|---|---|---|---|---|---|
@@ -39,6 +40,8 @@ one passed. Its folder has a `TEST-RESULT.md` with the details.
 | Nextcloud | `drivers/nextcloud/claude-sonnet-5.5` | Claude Code, Claude Sonnet 5.5 | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 91 s |
 | Nextcloud | `drivers/nextcloud/deepseek-v4.1-flash` | opencode, GO plan, deepseek-v4.1-flash | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 80 s |
 | Nextcloud | `drivers/nextcloud/gpt-5.6-luna` | opencode, GO plan, gpt-5.6-luna | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 151 s |
+| Vault | `drivers/vault/claude-sonnet-5.5` | Claude Code, Claude Sonnet 5.5 | 0.1.11 | `https://helm.releases.hashicorp.com/vault` 0.34.1 | 2.0.4 | 100 s |
+| Vault | `drivers/vault/deepseek-v4.1-flash` | opencode, GO plan, deepseek-v4.1-flash | 0.1.11 | `https://helm.releases.hashicorp.com/vault` 0.34.1 | 2.0.4 | 90 s |
 
 Several drivers exist for the same application: they are alternatives written by different models.
 They share the driver name (for example `grafana`), so Styrmin treats them as versions of one

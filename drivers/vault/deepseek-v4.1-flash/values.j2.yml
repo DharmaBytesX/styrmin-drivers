@@ -1,0 +1,82 @@
+# Values for the official HashiCorp Vault chart (https://helm.releases.hashicorp.com/vault,
+# chart 0.34.1). Every key below exists in the chart's values.yaml.
+#
+# Deployment model: a single Vault server in "standalone" mode with the file storage backend on
+# a PersistentVolumeClaim. The Agent Injector and the CSI provider are disabled: they need the
+# Kubernetes API, which Styrmin's default-deny egress policy blocks.
+fullnameOverride: styrmin-vault
+
+global:
+  enabled: true
+
+# Kubernetes sidecars that talk to the Kubernetes API are off.
+injector:
+  enabled: false
+csi:
+  enabled: false
+
+server:
+  # The chart defaults to standalone mode; spelled out so the mode is explicit.
+  standalone:
+    enabled: true
+
+  image:
+    repository: hashicorp/vault
+    tag: "{{ app.version }}"
+
+  # Vault's Kubernetes auth method uses TokenReview through this service account. Styrmin
+  # blocks Kubernetes API egress, so the binding is not useful here (see README).
+  authDelegator:
+    enabled: false
+
+  # Vault is sealed after every start until an operator unseals it, and no unseal mechanism
+  # works without an external KMS. The chart's readiness probe runs `vault status`, which
+  # fails while sealed, so FluxCD would roll the install back at 300 s. The probe is off so
+  # the install completes and the UI (which serves the unseal page while sealed) is reachable.
+  readinessProbe:
+    enabled: false
+  livenessProbe:
+    enabled: false
+
+  dataStorage:
+    enabled: true
+    size: 10Gi
+    storageClass: "{{ instance.config.standard_storage.storage_class }}"
+
+  # Audit devices are not configured by the driver, so no audit PVC is needed.
+  auditStorage:
+    enabled: false
+    storageClass: "{{ instance.config.standard_storage.storage_class }}"
+
+  service:
+    enabled: true
+
+  ingress:
+    enabled: true
+    hosts:
+      - host: "{{ services['vault'].primary_fqdn }}"
+        paths: []
+      - host: "{{ services['vault'].human_readable_fqdn }}"
+        paths: []
+
+  # Styrmin denies all egress in the deployment namespace. The chart's NetworkPolicy carries
+  # the egress rules: DNS to kube-dns/coredns, and same-namespace pods (the action Jobs that
+  # run `vault operator init` / `unseal`). The default ingress rule (all namespaces on 8200/8201)
+  # is kept from the chart's values.yaml so Traefik can reach Vault.
+  networkPolicy:
+    enabled: true
+    egress:
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      - to:
+          - podSelector: {}
