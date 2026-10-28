@@ -1,0 +1,94 @@
+# Helm values for grafana/helm-charts 10.5.15, rendered by Styrmin from the deployment context.
+# All keys come from the chart's values.yaml / _helpers.tpl.
+
+{#- The URL users open, for Grafana's server.domain and server.root_url. -#}
+{%- set scheme = instance.config.external_url_scheme or "https" %}
+{%- set port = instance.config.external_url_port %}
+{%- set port_suffix = (":" ~ port) if port and port not in [80, 443] else "" %}
+{%- set public_url = scheme ~ "://" ~ services['grafana'].primary_fqdn ~ port_suffix %}
+
+fullnameOverride: styrmin-grafana
+
+# One writable data store: run it as a StatefulSet with a stable PVC named `storage`
+# (the chart only uses volumeClaimTemplates / the `storage` volume in StatefulSet mode).
+useStatefulSet: true
+
+image:
+  repository: grafana/grafana
+  tag: "{{ app.version }}"       # the registry tags are the bare app version, no "v" prefix
+  pullPolicy: IfNotPresent
+
+# The bundled Helm test Job (bats) is not part of a Styrmin deployment.
+testFramework:
+  enabled: false
+
+# No subchart, sidecar or renderer reaches the Kubernetes API, so the chart needs no RBAC.
+rbac:
+  create: false
+  pspEnabled: false
+serviceAccount:
+  create: true
+
+# The initChownData container only runs `chown` on the volume (no Kubernetes API call), so keep it:
+# it makes the PVC writable by Grafana's non-root user (472).
+initChownData:
+  enabled: true
+
+# Fixed credentials, never generated: a restored or cloned deployment must keep matching its data.
+adminUser: "{{ parameters.admin_user }}"
+adminPassword: "{{ parameters.admin_password }}"
+
+persistence:
+  enabled: true
+  type: sts
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+  size: "{{ parameters.storage_size }}Gi"
+
+# Styrmin patches the ingress class; the driver only enables the Ingress with both hosts.
+ingress:
+  enabled: true
+  path: /
+  pathType: Prefix
+  hosts:
+    - "{{ services['grafana'].primary_fqdn }}"
+    - "{{ services['grafana'].human_readable_fqdn }}"
+
+grafana.ini:
+  analytics:
+    check_for_updates: false      # no internet dependency for a deployment to become Ready
+    reporting_enabled: false
+  server:
+    domain: "{{ services['grafana'].primary_fqdn }}"
+    root_url: "{{ public_url }}/"
+
+# Styrmin denies all egress in the deployment namespace: this policy allows DNS and the pods of
+# the same deployment. No internet rule: Grafana runs fully offline with an empty data source set,
+# and the update check is disabled above. Add the ipBlock rule if plugins or remote data sources
+# must be fetched from outside the cluster.
+extraObjects:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: styrmin-grafana-egress
+    spec:
+      podSelector: {}
+      policyTypes: [Egress]
+      egress:
+        # DNS
+        - to:
+            - namespaceSelector: {}
+              podSelector:
+                matchExpressions:
+                  - key: k8s-app
+                    operator: In
+                    values: [kube-dns, coredns]
+          ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+        # The other pods of this deployment
+        - to:
+            - podSelector: {}

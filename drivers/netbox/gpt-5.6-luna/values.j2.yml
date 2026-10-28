@@ -1,0 +1,124 @@
+# Helm values for netbox/netbox 8.3.97, rendered by Styrmin.
+fullnameOverride: styrmin-netbox
+
+image:
+  registry: ghcr.io
+  repository: netbox-community/netbox
+  tag: "v{{ app.version }}"
+  pullPolicy: IfNotPresent
+
+# Fixed values are deliberate: cloned or restored deployments must retain access to their data.
+secretKey: "netbox-styrmin-secret-key-keep-this-value-stable-2026-01"
+apiTokenPeppers:
+  1: "netbox-styrmin-api-token-pepper-keep-this-value-stable-2026-01"
+superuser:
+  name: admin
+  email: admin@example.com
+  password: "netbox-admin-password-change-before-production"
+  apiToken: "netbox-admin-api-token-change-before-production"
+
+allowedHosts:
+  - "{{ services['netbox'].primary_fqdn }}"
+  - "{{ services['netbox'].human_readable_fqdn }}"
+csrf:
+  trustedOrigins:
+    - "{{ instance.config.external_url_scheme }}://{{ services['netbox'].primary_fqdn }}"
+    - "{{ instance.config.external_url_scheme }}://{{ services['netbox'].human_readable_fqdn }}"
+
+ingress:
+  enabled: true
+  hosts:
+    - host: "{{ services['netbox'].primary_fqdn }}"
+      paths:
+        - /
+    - host: "{{ services['netbox'].human_readable_fqdn }}"
+      paths:
+        - /
+
+persistence:
+  enabled: true
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  size: 5Gi
+reportsPersistence:
+  enabled: false
+scriptsPersistence:
+  enabled: false
+
+init:
+  image:
+    registry: docker.io
+    repository: library/busybox
+    tag: "1.38.0"
+
+postgresql:
+  enabled: true
+  fullnameOverride: styrmin-postgresql
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: "17.6.0-debian-12-r4"
+  auth:
+    username: netbox
+    password: "netbox-db-password-change-before-production"
+    database: netbox
+    postgresPassword: "netbox-postgres-admin-password-change-before-production"
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+      size: 8Gi
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+valkey:
+  enabled: true
+  fullnameOverride: styrmin-valkey
+  architecture: standalone
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/valkey
+    tag: "8.0.2-debian-12-r2"
+  auth:
+    enabled: true
+    password: "netbox-cache-password-change-before-production"
+  primary:
+    persistence:
+      enabled: false
+
+# The worker otherwise starts a kubectl init container that needs Kubernetes API egress.
+# It is unnecessary because the worker and web deployment are independent Helm workloads.
+worker:
+  enabled: true
+  replicaCount: 1
+  waitForBackend:
+    enabled: false
+
+# Styrmin installs a default-deny-egress policy in every deployment namespace. NetBox needs DNS
+# and its local PostgreSQL/Valkey peers, but no internet access for its base configuration.
+extraDeploy:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: styrmin-netbox-egress
+    spec:
+      podSelector: {}
+      policyTypes: [Egress]
+      egress:
+        - to:
+            - namespaceSelector: {}
+              podSelector:
+                matchExpressions:
+                  - key: k8s-app
+                    operator: In
+                    values: [kube-dns, coredns]
+          ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+        - to:
+            - podSelector: {}

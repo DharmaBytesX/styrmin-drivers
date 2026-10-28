@@ -1,0 +1,47 @@
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: gitea
+spec:
+  version: "1"
+  supported_versions: ">=1.24,<1.28"
+  default_version: "1.27.0"
+  info:
+    icon: https://gitea.com/assets/img/logo.svg
+    description: Gitea is a lightweight, self-hosted Git service with built-in web UI, SSH and HTTPS access.
+    links:
+      - link: Source
+        url: https://github.com/go-gitea/gitea
+  helm:
+    main:
+      location: https://dl.gitea.com/charts/gitea
+      version: "12.7.0"
+
+  components:
+    server:   # Deployment/styrmin-gitea, image docker.gitea.com/gitea:{{ app.version }}-rootless
+      container: gitea
+      identifier:
+        label:
+          app.kubernetes.io/name: "gitea"
+      backup:
+        enabled: true
+        kind: disk
+        volumes: [data]
+    postgresql:   # StatefulSet/styrmin-postgresql, image docker.io/bitnamilegacy/postgresql
+      container: postgresql
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/name: "postgresql"
+          app.kubernetes.io/component: "primary"
+      backup:
+        enabled: true
+        kind: postgres
+        database_name: gitea
+
+  services:
+    - name: gitea
+      kind: http
+      scope: external
+      port: 3000
+      component: server

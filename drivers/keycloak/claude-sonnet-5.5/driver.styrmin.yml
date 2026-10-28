@@ -1,0 +1,47 @@
+---
+# Draft written by scaffold_driver.py from oci://registry-1.docker.io/bitnamicharts/keycloak 25.2.0.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: keycloak
+spec:
+  version: "1"
+  supported_versions: ">=26.3.3,<26.3.4"  
+  default_version: "26.3.3"
+  info:
+    icon: https://dyltqmyl993wv.cloudfront.net/assets/stacks/keycloak/img/keycloak-stack-220x234.png
+    description: Keycloak is a high performance Java-based identity and access management solution. It lets developers add an authentication layer to their applications with minimum effort.
+    links:
+      - link: Homepage
+        url: https://bitnami.com
+      - link: Source
+        url: https://github.com/bitnami/charts/tree/main/bitnami/keycloak
+  helm:
+    main:
+      location: oci://registry-1.docker.io/bitnamicharts/keycloak
+      version: "25.2.0"
+
+  components:
+    postgresql:   # StatefulSet/styrmin-postgresql, image docker.io/bitnami/postgresql:17.6.0-debian-12-r0
+      container: postgresql
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/component: "primary"
+      backup:
+        enabled: true
+        kind: postgres
+        database_name: bitnami_keycloak
+    server:   # StatefulSet/styrmin-keycloak, image docker.io/bitnami/keycloak:26.3.3-debian-12-r0
+      container: keycloak
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/component: "keycloak"
+
+  services:
+    - name: keycloak
+      kind: http
+      scope: external
+      port: 8080   # the port the container listens on
+      component: server

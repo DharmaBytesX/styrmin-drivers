@@ -1,0 +1,43 @@
+---
+# Driver for Grafana (https://github.com/grafana/grafana), the observability dashboards.
+# Chart: grafana-community/grafana 14.2.0, application 13.3.0.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: grafana
+spec:
+  version: "1"
+  supported_versions: ">=13.3,<13.4"
+  default_version: "13.3.0"
+  info:
+    icon: https://artifacthub.io/image/b4fed1a7-6c8f-4945-b99d-096efa3e4116
+    description: The leading tool for querying and visualizing time series and metrics.
+    links:
+      - link: Homepage
+        url: https://grafana.com
+      - link: Source
+        url: https://github.com/grafana/grafana
+      - link: Chart
+        url: https://github.com/grafana/helm-charts
+  helm:
+    main:
+      location: https://grafana-community.github.io/helm-charts/grafana
+      version: "14.2.0"
+
+  components:
+    server:   # Deployment/styrmin-grafana, image docker.io/grafana/grafana:13.3.0-distroless
+      container: grafana
+      identifier:
+        label:
+          app.kubernetes.io/name: "grafana"
+      backup:
+        enabled: true
+        kind: disk          # snapshot the `storage` PVC (SQLite DB, dashboards, plugins)
+        volume: storage
+
+  services:
+    - name: grafana
+      kind: http
+      scope: external
+      port: 3000   # the port the container listens on
+      component: server

@@ -1,0 +1,77 @@
+# Values for the Bitnami Keycloak chart. Value paths come from the chart's values.yaml.
+fullnameOverride: styrmin-keycloak
+image:
+  registry: docker.io
+  repository: bitnamilegacy/keycloak
+  tag: "{{ app.version }}-debian-12-r0"
+global:
+  security:
+    allowInsecureImages: true
+auth:
+  adminUser: admin
+  adminPassword: "styrmin-keycloak-admin"
+# The ingress controller terminates TLS and sends X-Forwarded-* headers.
+proxyHeaders: xforwarded
+httpEnabled: true
+hostnameStrict: false
+metrics:
+  enabled: false
+ingress:
+  enabled: true
+  hostname: "{{ services['keycloak'].primary_fqdn }}"
+  path: /
+  extraHosts:
+    - name: "{{ services['keycloak'].human_readable_fqdn }}"
+      path: /
+
+postgresql:
+  fullnameOverride: styrmin-postgresql
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: 17.6.0-debian-12-r4
+  auth:
+    postgresPassword: "styrmin-keycloak-postgres"
+    password: "styrmin-keycloak-db"
+  primary:
+    persistence:
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+    # The dump backup writes to a volume named `backup` mounted at /backup.
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraDeploy:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-keycloak-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}
+      # Internet egress is left off: Keycloak needs none for local users. Enable it for identity brokering to external providers.
+      # - to:
+      #     - ipBlock:
+      #         cidr: 0.0.0.0/0
+      #         except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

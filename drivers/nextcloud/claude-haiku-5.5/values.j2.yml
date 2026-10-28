@@ -1,0 +1,90 @@
+# Values for the nextcloud chart 9.4.1 (application Nextcloud 35.0.2, Apache flavor).
+# Keys come from the chart's values.yaml. Chart version: driver.styrmin.yml.
+
+fullnameOverride: styrmin-nextcloud
+
+image:
+  # The Docker Hub tags are <version>-apache, for example 35.0.2-apache.
+  tag: "{{ app.version }}-apache"
+
+# Nextcloud builds its links from this host, and the ingress routes this host to the pod.
+nextcloud:
+  host: "{{ services['nextcloud'].primary_fqdn }}"
+  # Fixed admin account. Change these in the driver before a production deployment.
+  username: admin
+  password: "nextcloud-admin-changeme"
+
+# Generate https links when users reach the URL over https.
+phpClientHttpsFix:
+  enabled: true
+  protocol: "{{ instance.config.external_url_scheme }}"
+
+ingress:
+  enabled: true
+
+# Data directory (/var/www/html) on a persistent volume, so user files survive pod restarts.
+persistence:
+  enabled: true
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  accessMode: ReadWriteOnce
+  size: 20Gi
+
+# The database runs in its own PostgreSQL pod, not in the application's SQLite file.
+internalDatabase:
+  enabled: false
+externalDatabase:
+  enabled: true
+  type: postgresql
+  host: styrmin-nextcloud-postgresql
+  user: nextcloud
+  password: "nextcloud-db-changeme"
+  database: nextcloud
+
+postgresql:
+  enabled: true
+  fullnameOverride: styrmin-nextcloud-postgresql
+  global:
+    postgresql:
+      auth:
+        username: nextcloud
+        password: "nextcloud-db-changeme"
+        database: nextcloud
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+      size: 8Gi
+    # The postgres backup strategy dumps into a volume named `backup` mounted at /backup.
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraManifests:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-nextcloud-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database)
+      - to:
+          - podSelector: {}

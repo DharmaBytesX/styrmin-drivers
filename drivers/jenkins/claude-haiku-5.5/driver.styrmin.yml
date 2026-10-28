@@ -1,0 +1,41 @@
+---
+# Written from https://charts.jenkins.io/jenkins 5.10.0 (application 2.580.1). See README.md for the decisions.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: jenkins
+spec:
+  version: "1"
+  supported_versions: ">=2.580,<2.581"   # the application version the chart 5.10.0 ships (2.580.1)
+  default_version: "2.580.1"
+  info:
+    icon: https://get.jenkins.io/art/jenkins-logo/logo.svg
+    description: 'Jenkins - Build great things at any scale! As the leading open source automation server, Jenkins provides over 2000 plugins to support building, deploying and automating any project. '
+    links:
+      - link: Homepage
+        url: https://www.jenkins.io/
+      - link: Source
+        url: https://github.com/jenkinsci/jenkins
+  helm:
+    main:
+      location: https://charts.jenkins.io/jenkins
+      version: "5.10.0"
+
+  components:
+    jenkins-controller:   # StatefulSet/styrmin-jenkins, image docker.io/jenkins/jenkins:2.580.1-jdk25
+      container: jenkins
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/component: "jenkins-controller"
+      backup:
+        enabled: true
+        kind: disk
+        volumes: [jenkins-home]
+
+  services:
+    - name: jenkins
+      kind: http
+      scope: external
+      port: 8080   # the port the container listens on
+      component: jenkins-controller

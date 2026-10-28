@@ -1,0 +1,120 @@
+# NetBox driver values for the official chart https://charts.netbox.oss.netboxlabs.com/netbox 8.3.97
+fullnameOverride: styrmin-netbox
+
+# Media files (uploads) live on a persistent volume.
+persistence:
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+
+# App image: ghcr.io/netbox-community/netbox tags look like v4.7.3
+image:
+  tag: "v{{ app.version }}"
+
+# --- Fixed credentials (never generated) ---
+superuser:
+  password: "netbox-superuser-password"
+  apiToken: "netbox-superuser-api-token-fixed-00000000000000000001"
+
+# Django SECRET_KEY, 50+ characters required by NetBox
+secretKey: "netbox-django-secret-key-fixed-00000000000000000000000001"
+
+# API token peppers for v2 API token HMAC signing; 50+ character values required
+apiTokenPeppers:
+  1: "netbox-api-token-pepper-1-fixed-0000000000000000000000001"
+
+# --- No SMTP server is configured (chart default: localhost:25, no password) ---
+
+# --- Database: same password in the app settings and in the postgresql subchart ---
+externalDatabase:
+  password: "netbox-postgresql-password"
+
+# --- Hosts the application must accept (readiness/startup probes also use allowedHosts[0]) ---
+allowedHosts:
+- "{{ services['netbox'].primary_fqdn }}"
+- "{{ services['netbox'].human_readable_fqdn }}"
+
+# --- Ingress: the chart's host format, with the two hosts Styrmin gives the service ---
+# No ingress class: Styrmin sets it.
+ingress:
+  enabled: true
+  hosts:
+  - host: "{{ services['netbox'].primary_fqdn }}"
+    paths:
+    - /
+  - host: "{{ services['netbox'].human_readable_fqdn }}"
+    paths:
+    - /
+
+# --- Worker ---
+# The wait-for-backend init container uses kubectl and calls the Kubernetes API,
+# which Styrmin's network policies block, so it is turned off.
+worker:
+  waitForBackend:
+    enabled: false
+
+# --- PostgreSQL subchart ---
+postgresql:
+  fullnameOverride: styrmin-postgresql
+  auth:
+    password: "netbox-postgresql-password"
+  image:
+    # Bitnami no longer publishes versioned tags under docker.io/bitnami
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: "17.6.0-debian-12-r4"
+  primary:
+    persistence:
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+    # The dump backup writes to a volume named `backup` mounted at /backup.
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+# --- Valkey subchart: standalone cache ---
+# - no replicas (the cache is not replicated)
+# - no persistence (cache data is ephemeral, so no backup is needed)
+valkey:
+  fullnameOverride: styrmin-valkey
+  auth:
+    password: "netbox-valkey-password"
+  # standalone: no replica StatefulSet is rendered
+  architecture: standalone
+  primary:
+    persistence:
+      enabled: false
+  image:
+    # Bitnami no longer publishes versioned tags under docker.io/bitnami
+    registry: docker.io
+    repository: bitnamilegacy/valkey
+    tag: "8.1.3-debian-12-r3"
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraDeploy:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-netbox-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}
+      # No internet egress: the release check is disabled by default (releaseCheck.url is null)
+      # and NetBox has no other external calls at runtime.

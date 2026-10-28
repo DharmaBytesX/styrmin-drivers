@@ -1,0 +1,81 @@
+# Draft written by scaffold_driver.py from oci://ghcr.io/n8n-io/n8n-helm-chart/n8n 1.17.0.
+# Image tag: the chart's default image is docker.n8n.io/n8nio/n8n:2.44.5; check the tag format.
+fullnameOverride: styrmin-n8n
+persistence:
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+  enabled: true
+image:
+  tag: "{{ app.version }}"
+secretRefs:
+  env:
+    N8N_ENCRYPTION_KEY: styrmin-n8n-encryption-key-0001
+    N8N_HOST: "{{ services['n8n'].primary_fqdn }}"
+    N8N_PROTOCOL: "{{ instance.config.external_url_scheme }}"
+queueMode:
+  enabled: false
+# SQLite on a ReadWriteOnce volume: Recreate avoids Multi-Attach errors on upgrade.
+strategy:
+  type: Recreate
+# One replica: a disruption budget would block node drains.
+pdb:
+  enabled: false
+config:
+  extraEnv:
+    - name: N8N_EDITOR_BASE_URL
+      value: "{{ instance.config.external_url_scheme }}://{{ services['n8n'].primary_fqdn }}"
+
+# Ingress: the chart's own host format, with the two hosts Styrmin gives the service.
+# Do not set the ingress class: Styrmin sets it.
+ingress:
+  enabled: true
+  hosts:
+  - host: "{{ services['n8n'].primary_fqdn }}"
+    paths:
+    - path: /
+      pathType: Prefix
+  - host: "{{ services['n8n'].human_readable_fqdn }}"
+    paths:
+    - path: /
+      pathType: Prefix
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-n8n-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}
+      # Internet: workflows call external APIs and webhooks
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
+
+# Standalone mode: n8n keeps its SQLite database on the persistent volume.
+database:
+  type: sqlite
+  useExternal: false
+redis:
+  enabled: false
+# n8n does not call the Kubernetes API; the Role only lets it read ConfigMaps and Secrets.
+rbac:
+  create: false

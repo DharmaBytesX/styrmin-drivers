@@ -1,0 +1,81 @@
+# Values for the official n8n chart 1.17.0. Keys come from the chart's values.yaml.
+fullnameOverride: styrmin-n8n
+
+# One main process, no queue mode: the queue needs an external PostgreSQL and Redis.
+queueMode:
+  enabled: false
+redis:
+  enabled: false
+# The chart's PostgreSQL settings are ignored when the type is sqlite.
+database:
+  type: sqlite
+  useExternal: false
+# Store the SQLite database and the n8n user folder on a persistent volume.
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+# The chart's Role lets pods read ConfigMaps and Secrets through the Kubernetes API. Single-main
+# SQLite needs no API access, and Styrmin denies that traffic.
+rbac:
+  create: false
+
+# A single replica: a PodDisruptionBudget would block node drains.
+pdb:
+  enabled: false
+
+image:
+  tag: "{{ app.version }}"
+
+# Fixed key, never generated. n8n uses it to encrypt the credentials users store in n8n.
+secretRefs:
+  env:
+    N8N_ENCRYPTION_KEY: styrmin-n8n-encryption-key
+    # The application's own host name: the first Styrmin host of the service.
+    N8N_HOST: "{{ services['n8n'].primary_fqdn }}"
+    N8N_PROTOCOL: "{{ instance.config.external_url_scheme }}"
+
+# Public URL of the editor. Without it, n8n builds OAuth and email links from the chart's default host.
+editor:
+  url: "{{ instance.config.external_url_scheme }}://{{ services['n8n'].primary_fqdn }}"
+
+ingress:
+  enabled: true
+  hosts:
+  - host: "{{ services['n8n'].primary_fqdn }}"
+    paths:
+    - path: /
+      pathType: Prefix
+  - host: "{{ services['n8n'].human_readable_fqdn }}"
+    paths:
+    - path: /
+      pathType: Prefix
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-n8n-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # n8n reaches the internet for the nodes that call external services (HTTP Request, webhooks, OAuth).
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

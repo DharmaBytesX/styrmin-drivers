@@ -1,0 +1,112 @@
+fullnameOverride: styrmin-gitea
+persistence:
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+image:
+  tag: "{{ app.version }}"
+# The chart deploys a busybox test-connection pod as a Helm test hook only; it is
+# never part of the release, so turn it off to keep the chart's image list clean.
+test:
+  enabled: false
+
+ingress:
+  enabled: true
+  hosts:
+  - host: "{{ services['gitea'].primary_fqdn }}"
+    paths:
+    - path: /
+  - host: "{{ services['gitea'].human_readable_fqdn }}"
+    paths:
+    - path: /
+# The chart sets the Gitea server DOMAIN/ROOT_URL from ingress.hosts[0].host
+# (see _helpers.tpl gitea.public_hostname), so the primary host above is what
+# Gitea advertises. PROTOCOL follows the external URL scheme of the deployment.
+
+gitea:
+  admin:
+    username: admin
+    password: "GiteaAdmin-2026!"
+    email: admin@localhost
+    passwordMode: keepUpdated
+  config:
+    server:
+      PROTOCOL: "{{ instance.config.external_url_scheme }}"
+    database:
+      # With postgresql.fullnameOverride the Service is styrmin-postgresql, but the
+      # chart builds <release>-postgresql from the 44-character release name
+      # (_helpers.tpl postgresql.dns). The chart only applies that default when
+      # database.HOST is empty, so set the real host explicitly.
+      HOST: "styrmin-postgresql:5432"
+
+# Plain single-instance PostgreSQL instead of the chart default postgresql-ha
+# (repmgr cluster): Gitea needs one writable database, the HA cluster adds
+# pgpool/witness pods Styrmin has no components for, and it is overkill.
+postgresql:
+  enabled: true
+  fullnameOverride: styrmin-postgresql
+  auth:
+    postgresPassword: "GiteaPostgres-2026!"
+    username: gitea
+    password: "GiteaDb-2026!"
+    database: gitea
+  global:
+    postgresql:
+      auth:
+        postgresPassword: "GiteaPostgres-2026!"
+        username: gitea
+        password: "GiteaDb-2026!"
+        database: gitea
+      service:
+        ports:
+          postgresql: 5432
+  primary:
+    persistence:
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+    # Styrmin postgres dump backups write to a volume named `backup` at /backup.
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+# The chart rebuilds the queue/session/cache connection string from the release
+# name whenever a valkey subchart is enabled (gitea.inline_configuration.defaults
+# in _helpers.tpl), so the string cannot be pointed at the styrmin-valkey-*
+# services that fullnameOverride creates. With both subcharts disabled the chart
+# falls back to in-memory session/cache and the level queue, which Gitea runs
+# fine on a single replica.
+valkey:
+  enabled: false
+valkey-cluster:
+  enabled: false
+postgresql-ha:
+  enabled: false
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraDeploy:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-gitea-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database)
+      - to:
+          - podSelector: {}
+      # No internet egress: Gitea serves local git traffic; external webhooks and
+      # OAuth providers would need it, so it is intentionally not allowed.

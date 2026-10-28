@@ -1,0 +1,67 @@
+# Values for the Grafana chart 14.2.0. Keys come from the chart's values.yaml.
+# Image tag: the chart's default is <app version>-distroless; the registry tags look like 13.3.0-distroless.
+fullnameOverride: styrmin-grafana
+
+image:
+  tag: "{{ app.version }}-distroless"
+
+# Credentials: fixed values, documented in README.md. The chart stores adminPassword in its Secret.
+adminUser: admin
+adminPassword: "styrmin-grafana"
+
+# Ingress: the chart reads a list of host names and one path. Styrmin sets the ingress class.
+ingress:
+  enabled: true
+  hosts: ["{{ services['grafana'].primary_fqdn }}", "{{ services['grafana'].human_readable_fqdn }}"]
+  path: /
+  pathType: Prefix
+
+grafana.ini:
+  server:
+    # The URL users open in the browser, used for redirects and links.
+    root_url: "{{ instance.config.external_url_scheme }}://{{ services['grafana'].primary_fqdn }}"
+  analytics:
+    # Grafana does not contact grafana.com for update checks: the deployment has no internet egress.
+    check_for_updates: false
+  plugins:
+    preinstall_auto_update: "false"
+
+# Dashboards, data sources and settings live in SQLite under /var/lib/grafana: keep them on a volume.
+# The Recreate strategy stops the old pod before the new one starts, so the single volume is never shared.
+persistence:
+  enabled: true
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+  size: 10Gi
+deploymentStrategy:
+  type: Recreate
+
+# The chart's helm test pod is not part of the deployment.
+testFramework:
+  enabled: false
+
+# Styrmin denies all egress in the deployment namespace: this policy allows DNS and the pods of this deployment.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-grafana-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment
+      - to:
+          - podSelector: {}

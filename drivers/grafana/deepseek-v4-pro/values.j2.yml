@@ -1,0 +1,73 @@
+# Helm values for grafana-community/grafana 14.2.0 (Grafana 13.3.0), rendered by Styrmin from
+# the deployment's context. Keys are copied from the chart's values.yaml.
+{%- set scheme = instance.config.external_url_scheme or "https" %}
+{%- set port = instance.config.external_url_port %}
+{%- set suffix = (":" ~ port) if port and port not in [80, 443] else "" %}
+{%- set url = scheme ~ "://" ~ services['grafana'].primary_fqdn ~ suffix %}
+
+fullnameOverride: styrmin-grafana
+
+image:
+  # docker.io/grafana/grafana publishes "<version>-distroless" tags; the app version has no suffix.
+  tag: "{{ app.version }}-distroless"
+
+# Fixed admin credentials: Grafana's default admin user is `admin`. A generated password would
+# break restored or cloned deployments.
+adminUser: admin
+adminPassword: grafana-admin-password
+
+grafana.ini:
+  server:
+    # The chart sets `domain` from the first ingress host; set the full base URL ourselves so
+    # redirects and generated links point at the externally reachable URL, not :3000.
+    root_url: "{{ url }}"
+
+ingress:
+  enabled: true
+  path: /
+  pathType: Prefix
+  hosts:
+    - "{{ services['grafana'].primary_fqdn }}"
+    - "{{ services['grafana'].human_readable_fqdn }}"
+
+# Grafana keeps its SQLite database, dashboards and plugins in /var/lib/grafana.
+persistence:
+  enabled: true
+  type: pvc
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
+
+# Styrmin denies all egress in the deployment namespace: allow DNS, the namespace's pods and the
+# internet (Grafana downloads plugins and talks to external data sources and grafana.com).
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-grafana-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment
+      - to:
+          - podSelector: {}
+      # The internet, without private ranges (plugins, external data sources, update checks)
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

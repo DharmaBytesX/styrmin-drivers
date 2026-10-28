@@ -1,0 +1,101 @@
+# Values for the nextcloud/helm chart 9.4.1.
+# Image tag: the chart's default image is docker.io/library/nextcloud:35.0.2-apache; check the tag format.
+# Ingress: switched on with ingress.enabled; the chart takes its host from nextcloud.host. Do not set the ingress class: Styrmin sets it.
+fullnameOverride: styrmin-nextcloud
+image:
+  tag: "{{ app.version }}-apache"
+nextcloud:
+  host: "{{ services['nextcloud'].primary_fqdn }}"
+  username: admin
+  password: styrmin-nextcloud-admin
+  trustedDomains:
+    - "{{ services['nextcloud'].primary_fqdn }}"
+    - "{{ services['nextcloud'].human_readable_fqdn }}"
+internalDatabase:
+  enabled: false
+ingress:
+  enabled: true
+  path: /
+  pathType: Prefix
+{% if instance.config.external_url_scheme == 'https' %}
+phpClientHttpsFix:
+  enabled: true
+  protocol: https
+{% endif %}
+persistence:
+  enabled: true
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+  size: "{{ parameters.storage_size }}"
+
+# The chart builds the redis host from the release name, which does not match the
+# fullnameOverride of the redis subchart, so redis is left off (see README.md).
+redis:
+  enabled: false
+
+postgresql:
+  fullnameOverride: styrmin-postgresql
+  enabled: true
+  global:
+    postgresql:
+      auth:
+        username: nextcloud
+        password: styrmin-nextcloud-db
+        database: nextcloud
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraManifests:
+- apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    name: styrmin-nextcloud-readable
+  spec:
+    rules:
+      - host: "{{ services['nextcloud'].human_readable_fqdn }}"
+        http:
+          paths:
+            - path: /
+              pathType: Prefix
+              backend:
+                service:
+                  name: styrmin-nextcloud
+                  port:
+                    number: 8080
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-nextcloud-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}
+      # Internet: app store, update checks, federation and mail
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

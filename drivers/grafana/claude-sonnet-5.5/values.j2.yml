@@ -1,0 +1,62 @@
+# Draft written by scaffold_driver.py from https://grafana-community.github.io/helm-charts/grafana 14.2.0.
+# Keys come from the chart's values.yaml.
+# Image tag: the chart's default image is docker.io/grafana/grafana:13.3.0-distroless; check the tag format.
+# Ingress: switched on with ingress.enabled; the chart takes its host from ingress.hosts. Do not set the ingress class: Styrmin sets it.
+fullnameOverride: styrmin-grafana
+image:
+  tag: "{{ app.version }}"
+ingress:
+  enabled: true
+  hosts: ["{{ services['grafana'].primary_fqdn }}", "{{ services['grafana'].human_readable_fqdn }}"]
+
+# Fixed credentials. The README explains how to change them.
+adminUser: admin
+adminPassword: "styrmin-grafana-admin"
+
+# Grafana keeps its SQLite database and plugins in /var/lib/grafana.
+persistence:
+  enabled: true
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+  size: 10Gi
+deploymentStrategy:
+  type: Recreate   # a ReadWriteOnce volume cannot be mounted by two pods during a rolling update
+
+# The pod security context (fsGroup) already sets volume ownership; the chown init container is not needed.
+initChownData:
+  enabled: false
+testFramework:
+  enabled: false
+
+grafana.ini:
+  server:
+    root_url: "{{ instance.config.external_url_scheme }}://{{ services['grafana'].primary_fqdn }}{% if instance.config.external_url_port not in (80, 443, none, '') %}:{{ instance.config.external_url_port }}{% endif %}/"
+  analytics:
+    check_for_updates: false
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-grafana-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}
+      # Internet: not allowed. Data sources inside the cluster are not covered either; see the README.

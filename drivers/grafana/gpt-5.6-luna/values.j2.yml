@@ -1,0 +1,49 @@
+# Grafana chart values. Keys are from chart 14.2.0 values.yaml.
+# The chart's default image uses the application version followed by -distroless.
+# Styrmin supplies the ingress class; hosts come from the external service context.
+fullnameOverride: styrmin-grafana
+image:
+  tag: "{{ app.version }}-distroless"
+ingress:
+  enabled: true
+  hosts: ["{{ services['grafana'].primary_fqdn }}", "{{ services['grafana'].human_readable_fqdn }}"]
+adminUser: admin
+adminPassword: "GrafanaAdmin-ChangeMe-13.3.0"
+env:
+  GF_SECURITY_SECRET_KEY: "styrmin-grafana-secret-key-change-me"
+persistence:
+  enabled: true
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+  size: 10Gi
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-grafana-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}
+      # Grafana itself does not download plugins or dashboards in this driver.
+      # - to:
+      #     - ipBlock:
+      #         cidr: 0.0.0.0/0
+      #         except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

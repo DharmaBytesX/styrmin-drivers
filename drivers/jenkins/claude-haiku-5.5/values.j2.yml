@@ -1,0 +1,87 @@
+# Values for the jenkins chart 5.10.0 (application 2.580.1). Keys come from the chart's values.yaml.
+fullnameOverride: styrmin-jenkins
+
+# The chart's config-reload sidecars call the Kubernetes API, which Styrmin's network policies
+# block (rule 16). The sidecars also deliver the chart's JCasC configuration, so the chart's
+# security settings are not applied. security.groovy (below) sets the admin account and the
+# authorization strategy instead. Jenkins reads init.groovy.d at every start.
+#
+# The chart's RBAC lets the controller manage pods for the Kubernetes plugin, which calls the
+# Kubernetes API. No kubernetes cloud is configured here (the chart set it up through JCasC),
+# so the controller does not need these permissions.
+rbac:
+  create: false
+
+persistence:
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+
+controller:
+  sidecars:
+    configAutoReload:
+      enabled: false
+  JCasC:
+    defaultConfig: false
+  initScripts:
+    security: |
+      import jenkins.model.Jenkins
+      import jenkins.model.JenkinsLocationConfiguration
+      import jenkins.install.InstallState
+      import hudson.security.HudsonPrivateSecurityRealm
+      import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
+
+      def jenkins = Jenkins.get()
+      def username = new File('/run/secrets/additional/chart-admin-username').text.trim()
+      def password = new File('/run/secrets/additional/chart-admin-password').text.trim()
+
+      def realm = new HudsonPrivateSecurityRealm(false)
+      realm.createAccount(username, password)
+      jenkins.setSecurityRealm(realm)
+
+      def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+      strategy.setAllowAnonymousRead(false)
+      jenkins.setAuthorizationStrategy(strategy)
+
+      JenkinsLocationConfiguration.get().setUrl('{{ instance.config.external_url_scheme }}://{{ services['jenkins'].primary_fqdn }}/')
+      jenkins.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
+      jenkins.save()
+  # Fixed admin password (rule 4). The chart stores it in the secret that security.groovy reads.
+  admin:
+    username: admin
+    password: styrmin-jenkins-admin
+  jenkinsUrl: "{{ instance.config.external_url_scheme }}://{{ services['jenkins'].primary_fqdn }}"
+  ingress:
+    enabled: true
+    hostName: "{{ services['jenkins'].primary_fqdn }}"
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-jenkins-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment
+      - to:
+          - podSelector: {}
+      # The internet: the chart's init container downloads the default plugins from
+      # updates.jenkins.io at every start, and jobs often fetch code. Private ranges stay closed.
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

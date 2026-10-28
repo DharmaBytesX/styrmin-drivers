@@ -1,0 +1,82 @@
+# Helm values for jenkinsci/jenkins 5.10.0 (application 2.580.1), rendered by Styrmin from the
+# deployment's context. Keys come from the chart's values.yaml.
+
+# Short, predictable names (rule 3): keeps the StatefulSet and the RBAC Role/RoleBinding names
+# under Kubernetes' limits even though the Helm release name is 44 characters.
+fullnameOverride: styrmin-jenkins
+
+controller:
+  image:
+    # The registry tags the controller image as "<version>-jdk25" (the chart's tagLabel).
+    tag: "{{ app.version }}-jdk25"
+
+  admin:
+    username: admin
+    # Fixed, never generated: a restored or cloned deployment must keep working with its data.
+    password: jenkins-admin-password
+
+  # Jenkins must know its own URL (redirects after login, absolute links in emails). Styrmin
+  # terminates TLS at its ingress controller, so the external scheme applies even though the
+  # chart's Ingress carries no TLS block.
+  jenkinsUrlProtocol: "{{ instance.config.external_url_scheme }}"
+
+  # Run builds on the controller. Styrmin's default-deny egress policy blocks the Kubernetes API,
+  # so the Kubernetes cloud cannot spawn agent pods; executors on the controller keep Jenkins
+  # usable.
+  numExecutors: 2
+
+  sidecars:
+    configAutoReload:
+      # The k8s-sidecar watches ConfigMaps through the Kubernetes API, which Styrmin blocks. JCasC
+      # configuration is still applied on startup by the chart's apply_config.sh init script.
+      enabled: false
+
+  ingress:
+    enabled: true
+    hostName: "{{ services['jenkins'].primary_fqdn }}"
+    path: "/"
+    # The chart exposes a second Ingress rule through resourceRootUrl (an alias that forwards to the
+    # same controller Service); it is only used by the Ingress template, not by Jenkins' own config.
+    resourceRootUrl: "{{ services['jenkins'].human_readable_fqdn }}"
+
+# Styrmin's default-deny egress blocks the Kubernetes API, so the Kubernetes agent cloud cannot
+# spawn pods. Disabling it removes the dead agent pod-template and its labels (which the chart
+# builds from the release name) and keeps the rendered config consistent with what can actually run.
+agent:
+  enabled: false
+
+persistence:
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+
+# Styrmin denies all egress in the deployment namespace. This policy allows what Jenkins needs:
+# DNS, its own pods, and the internet (plugin downloads on first start, SCM checkouts in builds).
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-jenkins-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment
+      - to:
+          - podSelector: {}
+      # The internet, without the private ranges that hold the cluster's own services
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

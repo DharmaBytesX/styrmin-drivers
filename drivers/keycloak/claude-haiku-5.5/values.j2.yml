@@ -1,0 +1,84 @@
+# Values for the Bitnami keycloak chart 25.2.0 (application Keycloak 26.3.3).
+# Key paths come from the chart's values.yaml. Keys the chart does not declare are ignored by Helm.
+fullnameOverride: styrmin-keycloak
+
+# Images: Bitnami removed versioned tags from docker.io/bitnami, so the tags live in bitnamilegacy.
+image:
+  registry: docker.io
+  repository: bitnamilegacy/keycloak
+  tag: "{{ app.version }}-debian-12-r0"
+
+# Keycloak admin user. Fixed value (see README: change it before a shared deployment).
+auth:
+  adminUser: admin
+  adminPassword: "keycloak-admin-password"
+
+# Keycloak runs behind the Styrmin ingress. The proxy sends X-Forwarded-* headers, Keycloak
+# builds its URLs from the host in ingress.hostname, and the chart serves plain HTTP
+# (the chart requires TLS only in production mode, which is off here).
+production: false
+httpEnabled: true
+proxyHeaders: xforwarded
+hostnameStrict: true
+
+ingress:
+  enabled: true
+  hostname: "{{ services['keycloak'].primary_fqdn }}"
+  path: /
+  pathType: Prefix
+  extraHosts:
+    - name: "{{ services['keycloak'].human_readable_fqdn }}"
+      path: /
+
+# Database: the chart's PostgreSQL subchart. Keep the password the same in both places.
+postgresql:
+  enabled: true
+  fullnameOverride: styrmin-postgresql
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: "17.6.0-debian-12-r4"
+  auth:
+    username: bn_keycloak
+    database: bitnami_keycloak
+    password: "keycloak-db-password"
+    postgresPassword: "keycloak-db-superuser-password"
+  architecture: standalone
+  primary:
+    persistence:
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+    # The dump backup writes to a volume named `backup` mounted at /backup.
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+# Styrmin denies all egress in the deployment namespace. This policy allows DNS and
+# traffic between the pods of this deployment (Keycloak -> PostgreSQL). Keycloak needs no internet access.
+extraDeploy:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: styrmin-keycloak-egress
+    spec:
+      podSelector: {}
+      policyTypes: [Egress]
+      egress:
+        # DNS
+        - to:
+            - namespaceSelector: {}
+              podSelector:
+                matchExpressions:
+                  - key: k8s-app
+                    operator: In
+                    values: [kube-dns, coredns]
+          ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+        # The other pods of this deployment
+        - to:
+            - podSelector: {}

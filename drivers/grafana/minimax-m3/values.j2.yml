@@ -1,0 +1,94 @@
+# Helm values for grafana-community/grafana 14.2.0, rendered by Styrmin from the deployment's context.
+{%- set scheme = instance.config.external_url_scheme or "https" %}
+{%- set port = (instance.config.external_url_port or 0) | int %}
+{%- set suffix = (":" ~ port) if port and port not in [80, 443] else "" %}
+{%- set root_url = scheme ~ "://" ~ services['grafana'].primary_fqdn ~ suffix %}
+
+fullnameOverride: styrmin-grafana
+
+image:
+  # The chart's default tag is the app version with the "-distroless" suffix; the registry tags
+  # of the 13.3 line carry no "v" prefix.
+  tag: "{{ app.version }}-distroless"
+
+# Fixed credentials: the chart generates a random password when adminPassword is empty.
+adminUser: admin
+adminPassword: "{{ parameters.admin_password }}"
+
+ingress:
+  enabled: true
+  path: /
+  pathType: Prefix
+  # The chart takes a list of host names; the path and the path type are chart-wide.
+  hosts:
+    - "{{ services['grafana'].primary_fqdn }}"
+    - "{{ services['grafana'].human_readable_fqdn }}"
+
+# Grafana keeps its SQLite database, dashboards, users and plugins in /var/lib/grafana.
+persistence:
+  enabled: true
+  type: pvc
+  size: "{{ parameters.storage_size }}"
+  storageClassName: "{{ instance.config.standard_storage.storage_class }}"
+
+grafana.ini:
+  server:
+    # The chart's default root_url points at the container port (3000); the users reach
+    # Grafana through the Ingress, so the public URL is set here.
+    root_url: "{{ root_url }}"
+
+# The chart's test pod is not part of the deployment.
+testFramework:
+  enabled: false
+
+# The driver deploys no sidecar and no dashboard provider, so the chart's ClusterRole would
+# grant nothing. Not creating it keeps the install inside the deployment's namespace.
+rbac:
+  create: false
+
+# Grafana does not call the Kubernetes API.
+automountServiceAccountToken: false
+
+# On the first start Grafana migrates its SQLite database, which can take longer than the
+# liveness probe's 60 s delay. The startup probe gives it 30 x 10 s before the liveness
+# probe may restart the container.
+startupProbe:
+  httpGet:
+    path: /api/health
+    port: grafana
+  failureThreshold: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-grafana-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment
+      - to:
+          - podSelector: {}
+      # The internet, without private ranges: Grafana installs plugins from grafana.com,
+      # checks for updates and proxies requests to datasources outside the cluster.
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

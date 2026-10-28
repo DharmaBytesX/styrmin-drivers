@@ -1,0 +1,68 @@
+---
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: netbox
+spec:
+  version: "1"
+  supported_versions: ">=4.7,<4.8"
+  default_version: "4.7.3"
+  info:
+    icon: https://raw.githubusercontent.com/netbox-community/netbox/main/docs/netbox_logo_light.svg
+    description: Network source of truth for IP address management and data center infrastructure
+    authors: [netbox-community]
+    license: Apache-2.0
+    links:
+      - link: Documentation
+        url: https://netbox.dev/
+      - link: Source
+        url: https://github.com/netbox-community/netbox
+  helm:
+    main:
+      location: https://charts.netbox.oss.netboxlabs.com/netbox
+      version: "8.3.97"
+
+  components:
+    server:
+      container: netbox
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/component: "netbox"
+          app.kubernetes.io/name: "netbox"
+      backup:
+        enabled: true
+        kind: disk
+        volume: media
+    worker:
+      container: netbox-worker
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/component: "worker"
+          app.kubernetes.io/name: "netbox"
+    database:
+      container: postgresql
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/name: "postgresql"
+          app.kubernetes.io/component: "primary"
+      backup:
+        enabled: true
+        kind: postgres
+        database_name: netbox
+    cache:
+      container: valkey
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/name: "valkey"
+          app.kubernetes.io/component: "primary"
+
+  services:
+    - name: netbox
+      kind: http
+      scope: external
+      port: 8080
+      component: server

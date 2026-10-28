@@ -1,0 +1,62 @@
+# Draft written by scaffold_driver.py from https://charts.jenkins.io/jenkins 5.10.0.
+# Ingress: switched on with controller.ingress.enabled; its host is controller.ingress.hostName. Do not set the ingress class: Styrmin sets it.
+fullnameOverride: styrmin-jenkins
+persistence:
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+controller:
+  image:
+    tag: "{{ app.version }}-jdk25"
+  admin:
+    username: admin
+    password: "styrmin-jenkins-admin"
+  jenkinsUrlProtocol: "{{ instance.config.external_url_scheme }}"
+  jenkinsUrl: "{{ instance.config.external_url_scheme }}://{{ services['jenkins'].primary_fqdn }}"
+  httpsKeyStore:
+    password: "styrmin-jenkins-keystore"
+  # The config-reload sidecar calls the Kubernetes API, which Styrmin blocks.
+  sidecars:
+    configAutoReload:
+      enabled: false
+  # The kubernetes plugin starts agent pods through the Kubernetes API, which Styrmin blocks.
+  testEnabled: false
+  ingress:
+    enabled: true
+    hostName: "{{ services['jenkins'].primary_fqdn }}"
+  secondaryingress:
+    enabled: true
+    hostName: "{{ services['jenkins'].human_readable_fqdn }}"
+    paths: ["/"]
+agent:
+  enabled: false
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraObjects:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-jenkins-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (application -> database, cache, queue)
+      - to:
+          - podSelector: {}
+      # Internet: the init container downloads plugins from updates.jenkins.io at start
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
