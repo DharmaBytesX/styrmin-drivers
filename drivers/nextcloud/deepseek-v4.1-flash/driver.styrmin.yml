@@ -1,0 +1,53 @@
+---
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: nextcloud
+spec:
+  version: "1"
+  supported_versions: ">=35.0,<35.1"
+  default_version: "35.0.2"
+  info:
+    icon: https://raw.githubusercontent.com/nextcloud/server/master/core/img/logo/logo.svg
+    description: A file sharing server that puts the control and security of your own data back into your hands.
+    authors: [Nextcloud]
+    license: AGPL-3.0
+    links:
+      - link: Homepage
+        url: https://nextcloud.com/
+      - link: Source
+        url: https://github.com/nextcloud/helm
+
+  helm:
+    main:
+      location: https://nextcloud.github.io/helm/nextcloud
+      version: "9.4.1"
+
+  components:
+    app:
+      container: nextcloud
+      singleton: true   # one ReadWriteOnce volume and no Redis: do not scale the app pod
+      identifier:
+        label:
+          app.kubernetes.io/component: "app"
+      backup:
+        enabled: true
+        kind: disk
+        volume: nextcloud-main
+    postgresql:
+      container: postgresql
+      singleton: true
+      identifier:
+        label:
+          app.kubernetes.io/component: "primary"
+      backup:
+        enabled: true
+        kind: postgres
+        database_name: nextcloud
+
+  services:
+    - name: nextcloud
+      kind: http
+      scope: external
+      port: 80
+      component: app

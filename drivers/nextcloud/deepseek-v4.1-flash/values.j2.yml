@@ -1,0 +1,126 @@
+# Helm values for Nextcloud (nextcloud/nextcloud 9.4.1), rendered by Styrmin from the deployment's context.
+{%- set scheme = instance.config.external_url_scheme or "https" %}
+{%- set port = instance.config.external_url_port %}
+{%- set suffix = (":" ~ port) if port and port not in [80, 443] else "" %}
+{%- set url = scheme ~ "://" ~ services['nextcloud'].primary_fqdn ~ suffix %}
+fullnameOverride: styrmin-nextcloud
+
+image:
+  tag: "{{ app.version }}-apache"   # the official tags are <version>-apache / <version>-fpm
+
+nextcloud:
+  host: "{{ services['nextcloud'].primary_fqdn }}"
+  username: admin
+  # Fixed, not generated: a restored or cloned deployment must keep working with its data.
+  password: nextcloud-admin-password
+  trustedDomains:
+    - "{{ services['nextcloud'].primary_fqdn }}"
+{%- if suffix %}
+    - "{{ services['nextcloud'].primary_fqdn }}{{ suffix }}"
+{%- endif %}
+  configs:
+    styrmin-reverse-proxy.config.php: |
+      <?php
+      $CONFIG = array(
+        'overwriteprotocol' => '{{ scheme }}',
+        'overwrite.cli.url' => '{{ url }}',
+        'trusted_proxies' => array('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10'),
+      );
+
+ingress:
+  enabled: true
+  path: /
+  pathType: Prefix
+  annotations:
+    # nginx-ingress default body size is 1m, far too small for file uploads.
+    # Other controllers (for example Traefik) ignore this annotation.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+# Nextcloud keeps apps, config and user files on this volume.
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: "{{ instance.config.standard_storage.storage_class }}"
+
+# Background jobs: the chart's crond sidecar shares the app volume, no extra workload.
+cronjob:
+  enabled: true
+  type: sidecar
+
+# PostgreSQL from the chart's Bitnami subchart, one primary.
+internalDatabase:
+  enabled: false
+
+externalDatabase:
+  enabled: false
+
+postgresql:
+  enabled: true
+  fullnameOverride: styrmin-postgresql
+  auth:
+    postgresPassword: nextcloud-postgres-password
+    username: nextcloud
+    password: nextcloud-db-password
+    database: nextcloud
+    replicationPassword: nextcloud-replication-password
+  # The Nextcloud chart reads its DB secret from global.postgresql.auth (see templates/db-secret.yaml),
+  # so keep both in sync with auth above.
+  global:
+    postgresql:
+      auth:
+        username: nextcloud
+        password: nextcloud-db-password
+        database: nextcloud
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: "{{ instance.config.standard_storage.storage_class }}"
+    # The postgres backup strategy dumps into a volume named `backup` mounted at /backup.
+    extraVolumes:
+      - name: backup
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: backup
+        mountPath: /backup
+
+# The first start installs Nextcloud into an empty database: do not let liveness kill it.
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 50
+  successThreshold: 1
+
+# Styrmin denies all egress in the deployment namespace: this policy allows it for every pod.
+extraManifests:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: styrmin-nextcloud-egress
+  spec:
+    podSelector: {}
+    policyTypes: [Egress]
+    egress:
+      # DNS
+      - to:
+          - namespaceSelector: {}
+            podSelector:
+              matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: [kube-dns, coredns]
+        ports:
+          - port: 53
+            protocol: UDP
+          - port: 53
+            protocol: TCP
+      # The other pods of this deployment (Nextcloud -> PostgreSQL)
+      - to:
+          - podSelector: {}
+      # The internet without private ranges: app store, update checks, previews, mail.
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+              except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]

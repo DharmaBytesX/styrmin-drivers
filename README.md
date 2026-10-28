@@ -37,6 +37,7 @@ one passed. Its folder has a `TEST-RESULT.md` with the details.
 | NetBox | `drivers/netbox/qwen3.8-27b-local` | opencode, local Qwen3.8 27B (MTPLX) | 0.1.5 | `https://charts.netbox.oss.netboxlabs.com/netbox` 8.3.97 | 4.7.3 | 524 s |
 | Nextcloud | `drivers/nextcloud/claude-haiku-5.5` | Claude Code, Claude Haiku 5.5 | 0.1.9 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 140 s |
 | Nextcloud | `drivers/nextcloud/claude-sonnet-5.5` | Claude Code, Claude Sonnet 5.5 | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 91 s |
+| Nextcloud | `drivers/nextcloud/deepseek-v4.1-flash` | opencode, GO plan, deepseek-v4.1-flash | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 80 s |
 | Nextcloud | `drivers/nextcloud/gpt-5.6-luna` | opencode, GO plan, gpt-5.6-luna | 0.1.10 | `https://nextcloud.github.io/helm/nextcloud` 9.4.1 | 35.0.2 | 151 s |
 
 Several drivers exist for the same application: they are alternatives written by different models.
