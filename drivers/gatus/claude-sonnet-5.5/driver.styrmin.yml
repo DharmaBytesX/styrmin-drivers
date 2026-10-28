@@ -1,0 +1,36 @@
+---
+# Gatus on the bjw-s app-template chart: the Gatus chart (twin.github.io/helm-charts/gatus 1.5.0)
+# has no value that can add an egress NetworkPolicy, so its pod cannot resolve DNS under Styrmin.
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: gatus
+spec:
+  version: "1"
+  supported_versions: ">=5,<6"
+  default_version: "5.34.0"   # the image tag: values.j2.yml uses app.version
+  info:
+    icon: https://raw.githubusercontent.com/TwiN/gatus/a1c8422c2ff2b9d0a6f184c99e4dc728d3f2cd75/web/static/logo-192x192.png
+    description: Automated service health dashboard, one container with its configuration in a ConfigMap.
+    links:
+      - link: Homepage
+        url: https://github.com/TwiN/gatus
+  helm:
+    main:
+      location: oci://ghcr.io/bjw-s-labs/helm/app-template
+      version: 5.2.1
+
+  components:
+    server:
+      container: app
+      identifier:
+        label:
+          styrmin/component: server
+      singleton: true          # results are kept in memory: a second replica would show other results
+
+  services:
+    - name: gatus
+      kind: http
+      scope: external
+      port: 8080               # the port the container listens on
+      component: server

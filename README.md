@@ -18,7 +18,9 @@ passed. Its folder has a `TEST-RESULT.md` with the details.
 
 | Application | Driver directory | Written by | Skill | Chart | App version | Running after |
 |---|---|---|---|---|---|---|
+| Gatus | `drivers/gatus/claude-haiku-5.5` | Claude Code, Claude Haiku 5.5 | 0.1.13 | `oci://ghcr.io/bjw-s-labs/helm/app-template` 5.2.1 | 5.34.0 | 80 s |
 | Gatus | `drivers/gatus/claude-opus-5.5` | Claude Code, Claude Opus 5.5 | 0.1.12 | `oci://ghcr.io/bjw-s-labs/helm/app-template` 5.2.1 | 5.34.0 | 80 s |
+| Gatus | `drivers/gatus/claude-sonnet-5.5` | Claude Code, Claude Sonnet 5.5 | 0.1.13 | `oci://ghcr.io/bjw-s-labs/helm/app-template` 5.2.1 | 5.34.0 | 90 s |
 | Gitea | `drivers/gitea/qwen3.8-27b-local` | opencode, local Qwen3.8 27B (MTPLX) | 0.1.7 | `https://dl.gitea.com/charts/gitea` 12.7.0 | 1.27.0 | 90 s |
 | Grafana | `drivers/grafana/claude-haiku-5.5` | Claude Code, Claude Haiku 5.5 | 0.1.8 | `https://grafana-community.github.io/helm-charts/grafana` 14.2.0 | 13.3.0 | 90 s |
 | Grafana | `drivers/grafana/claude-sonnet-5.5` | Claude Code, Claude Sonnet 5.5 | 0.1.8 | `https://grafana-community.github.io/helm-charts/grafana` 14.2.0 | 13.3.0 | 91 s |

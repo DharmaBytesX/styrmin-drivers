@@ -1,0 +1,112 @@
+---
+# Helm values for bjw-s app-template 5.x.
+{%- set probe_spec %}
+              httpGet:
+                path: /health
+                port: 8080
+{%- endset %}
+global:
+  fullnameOverride: styrmin-gatus
+
+controllers:
+  main:
+    replicas: 1
+    labels:
+      styrmin/component: server
+    pod:
+      labels:
+        styrmin/component: server
+    containers:
+      app:
+        image:
+          repository: twinproduction/gatus
+          tag: "v{{ app.version }}"
+        probes:
+          startup:
+            enabled: true
+            custom: true
+            spec:{{ probe_spec }}
+              periodSeconds: 5
+              failureThreshold: 30
+          liveness:
+            enabled: true
+            custom: true
+            spec:{{ probe_spec }}
+              periodSeconds: 20
+          readiness:
+            enabled: true
+            custom: true
+            spec:{{ probe_spec }}
+              periodSeconds: 10
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 8080
+
+ingress:
+  main:
+    className: "{{ instance.config.ingress_class }}"
+    hosts:
+{%- for host in [services['gatus'].primary_fqdn, services['gatus'].human_readable_fqdn] if host %}
+      - host: "{{ host }}"
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+{%- endfor %}
+
+# Same example configuration as the Gatus chart's default values.
+configMaps:
+  config:
+    enabled: true
+    data:
+      config.yaml: |
+        endpoints:
+          - name: example
+            url: https://example.org
+            interval: 60s
+            conditions:
+              - "[STATUS] == 200"
+              - "[BODY] == pat(*<h1>Example Domain</h1>*)"
+
+persistence:
+  config:
+    type: configMap
+    identifier: config
+    globalMounts:
+      - path: /config
+
+# Styrmin denies all egress in the namespace (opsmill/styrmin#284): allow DNS, the pods of the
+# environment, and the internet without private ranges (Gatus checks public endpoints).
+networkpolicies:
+  egress:
+    controller: main
+    policyTypes:
+      - Egress
+    rules:
+      egress:
+        - to:
+            - namespaceSelector: {}
+              podSelector:
+                matchExpressions:
+                  - key: k8s-app
+                    operator: In
+                    values: [kube-dns, coredns]
+          ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  styrmin/environment_id: "{{ labels.environment_id }}"
+        - to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
