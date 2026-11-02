@@ -6,6 +6,17 @@ Application drivers for [Styrmin](https://docs.styrmin.app/).
   single-container HTTP application), unchanged.
 - `drivers/<application>/<model>/`: drivers written by AI models with the
   `creating-styrmin-drivers` skill, each in an isolated container, then deployed and tested.
+- `drivers/<application>/`: examples copied from `driver/examples/` in
+  [opsmill/styrmin](https://github.com/opsmill/styrmin): db-test, generic-app, infrahub,
+  infrahub-enterprise, infrahub-mcp, semaphore, simple-app, and slurpit. The db-test and
+  simple-app directories include their application source and Helm charts. These copies
+  have not been deployed or tested from this repository.
+
+The db-test and simple-app examples need preparation before deployment: build and
+distribute their application images, publish their Helm charts, and replace the bare
+chart locations (`db-test` and `simple-app`) in the driver specifications with the
+published chart URLs. Fetch the db-test chart's MariaDB and MongoDB dependencies before
+packaging it. Including the source directories here does not perform these steps.
 
 ## Tested drivers
 

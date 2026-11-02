@@ -1,0 +1,73 @@
+---
+apiVersion: "styrmin.io/v1"
+kind: ApplicationDriver
+metadata:
+  name: semaphore
+spec:
+  version: "2"
+  supported_versions: ">=2.15,<2.17"
+  default_version: "2.16.47"
+  info:
+    description: Modern UI and powerful API for Ansible, Terraform, and other DevOps tools
+    authors: [opsmill]
+    license: Apache-2.0
+    links:
+      - link: Homepage
+        url: 'https://semaphoreui.com/'
+  helm:
+    main:
+      location: https://semaphoreui.github.io/charts/semaphore
+      version: 16.0.11
+
+  parameters:
+    - name: docker_image
+      kind: string
+      label: "Docker image to use for Semaphore"
+      default: "semaphoreui/semaphore"
+      # - name: additional_python_packages
+      #   kind: string
+      #   label: "Additional Python packages to install in the Semaphore container"
+      #   default: ""
+
+  components:
+    server:
+      container: semaphore
+      identifier:
+        label:
+          app.kubernetes.io/name: semaphore
+
+    database:
+      container: postgresql
+      identifier:
+        label:
+          app.kubernetes.io/name: postgresql
+      backup:
+        enabled: true
+        kind: postgres
+        database_name: semaphore
+
+  services:
+    - name: semaphore
+      kind: http
+      scope: internal
+      port: 3000
+      component: server
+
+  actions:
+    - name: upgrade
+      hook: upgrade
+      mode: core
+      description: Upgrade Semaphore
+      location: "actions.py::upgrade"
+
+    - name: pre_setup
+      hook: setup
+      mode: pre
+      description: Pre-setup of Semaphore
+      location: "actions.py::pre_setup"
+
+    - name: post_setup
+      hook: setup
+      mode: post
+      description: Post-setup of Semaphore
+      location: "actions.py::post_setup"
